@@ -1,0 +1,31 @@
+{
+  "id": "ra-event-map",
+  "name": "RA Event Map",
+  "version": "0.2.0",
+  "description": "Browse public Resident Advisor event listings by city and date on an OpenStreetMap map.",
+  "author": "hamzamerzic",
+  "license": "MIT",
+  "homepage": "https://github.com/hamzamerzic/ra-event-map",
+  "entry": "index.jsx",
+  "icon": "icon.png",
+  "offline_capable": false,
+  "permissions": {
+    "cross_app_access": "none",
+    "share_with_apps": "none"
+  },
+  "runtime": {
+    "imports": [
+      "react",
+      "react-dom",
+      "@openai/apps-sdk-ui/components/Icon"
+    ],
+    "esm_deps": []
+  },
+  "source_files": [
+    "data.js",
+    "LeafletEventMap.jsx",
+    "leafletCss.js",
+    "LEAFLET-LICENSE.txt",
+    "vendor/leaflet-src.esm.js"
+  ]
+}
