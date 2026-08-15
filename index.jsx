@@ -378,8 +378,9 @@ const CSS = `
   .ra-leaflet .leaflet-tile-pane { filter: saturate(.72) contrast(.93) brightness(.84); }
   .ra-map-wash { position: absolute; z-index: 400; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(12,20,16,.06), rgba(12,20,16,.13)); box-shadow: inset 0 0 70px rgba(5, 10, 7, .2); }
   .ra-pin-shell { border: 0 !important; background: transparent !important; }
-  .ra-pin { width: 34px; height: 34px; display: grid; place-items: center; border: 2px solid rgba(255,255,255,.88); border-radius: 50% 50% 50% 12%; color: #17200e; background: var(--ra-lime); box-shadow: 0 8px 18px rgba(12,20,14,.32); cursor: pointer; rotate: -45deg; transition: scale .18s ease, box-shadow .18s ease; }
-  .ra-pin > span { rotate: 45deg; font-size: 10px; font-weight: 850; }
+  .ra-pin { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border: 2px solid rgba(255,255,255,.88); border-radius: 50% 50% 50% 12%; color: #17200e; background: var(--ra-lime); box-shadow: 0 8px 18px rgba(12,20,14,.32); cursor: pointer; rotate: -45deg; transition: scale .18s ease, box-shadow .18s ease; }
+  .ra-pin > span:first-child { rotate: 45deg; font-size: 10px; font-weight: 850; }
+  .ra-pin .ra-pin-more { position: absolute; top: -9px; right: -11px; min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 5px; border: 2px solid #fff; border-radius: 999px; color: #fff; background: #17200e; box-shadow: 0 4px 10px rgba(5,12,8,.34); font-size: 9px; font-weight: 850; rotate: 45deg; }
   .ra-pin-shell:hover .ra-pin, .ra-pin.is-selected { scale: 1.18; box-shadow: 0 0 0 7px rgba(201,246,107,.2), 0 10px 22px rgba(5,12,8,.38); }
   .ra-pin.is-selected { background: #fff; }
   .ra-pin-shell:focus-visible { outline: 0; }

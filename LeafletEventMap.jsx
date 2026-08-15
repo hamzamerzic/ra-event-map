@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin } from '@openai/apps-sdk-ui/components/Icon'
 import * as L from './vendor/leaflet-src.esm.js'
+import { clusterEvents } from './mapClusters.js'
 
 const TILE_TEMPLATE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
@@ -15,35 +16,51 @@ function blobToDataUrl(blob) {
 
 function createProxyTileLayer(token) {
   const controllers = new Set()
+  const tileCache = new Map()
+  const cacheLimit = 192
+
+  function loadTile(remote) {
+    const cached = tileCache.get(remote)
+    if (cached) {
+      tileCache.delete(remote)
+      tileCache.set(remote, cached)
+      return cached
+    }
+    const controller = new AbortController()
+    controllers.add(controller)
+    const pending = fetch(`/api/proxy?url=${encodeURIComponent(remote)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    }).then((response) => {
+      if (!response.ok) throw new Error(`Map tile ${response.status}`)
+      return response.blob()
+    }).then(blobToDataUrl).finally(() => controllers.delete(controller))
+    pending.catch(() => {
+      if (tileCache.get(remote) === pending) tileCache.delete(remote)
+    })
+    tileCache.set(remote, pending)
+    if (tileCache.size > cacheLimit) tileCache.delete(tileCache.keys().next().value)
+    return pending
+  }
+
   const ProxyTileLayer = L.GridLayer.extend({
     createTile(coords, done) {
       const image = document.createElement('img')
       image.alt = ''
       image.setAttribute('role', 'presentation')
-      const controller = new AbortController()
-      controllers.add(controller)
       const remote = TILE_TEMPLATE
         .replace('{z}', coords.z)
         .replace('{x}', coords.x)
         .replace('{y}', coords.y)
-      fetch(`/api/proxy?url=${encodeURIComponent(remote)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      }).then((response) => {
-        if (!response.ok) throw new Error(`Map tile ${response.status}`)
-        return response.blob()
-      }).then(blobToDataUrl).then((url) => {
+      loadTile(remote).then((url) => {
         image.onload = () => {
-          controllers.delete(controller)
           done(null, image)
         }
         image.onerror = (error) => {
-          controllers.delete(controller)
           done(error, image)
         }
         image.src = url
       }).catch((error) => {
-        controllers.delete(controller)
         if (error?.name !== 'AbortError') done(error, image)
       })
       return image
@@ -52,33 +69,16 @@ function createProxyTileLayer(token) {
   const layer = new ProxyTileLayer({
     minZoom: 4,
     maxZoom: 19,
-    keepBuffer: 2,
-    updateWhenZooming: true,
-    updateWhenIdle: false,
+    keepBuffer: 4,
+    updateWhenZooming: false,
+    updateWhenIdle: true,
   })
   layer.abortPending = () => {
     controllers.forEach((controller) => controller.abort())
     controllers.clear()
+    tileCache.clear()
   }
   return layer
-}
-
-function clusterEvents(events) {
-  const clusters = new Map()
-  events.forEach((event) => {
-    if (!Number.isFinite(event.venue.lat) || !Number.isFinite(event.venue.lon)) return
-    const key = `${event.venue.lat.toFixed(4)},${event.venue.lon.toFixed(4)}`
-    const cluster = clusters.get(key) || {
-      key,
-      lat: event.venue.lat,
-      lon: event.venue.lon,
-      venue: event.venue.name,
-      events: [],
-    }
-    cluster.events.push(event)
-    clusters.set(key, cluster)
-  })
-  return [...clusters.values()]
 }
 
 function distanceKm(point, center) {
@@ -93,13 +93,20 @@ function distanceKm(point, center) {
   return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
 }
 
-function markerIcon(label, selected) {
+function markerIcon(label, additionalEvents, selected) {
   return L.divIcon({
     className: 'ra-pin-shell',
-    html: `<span class="ra-pin${selected ? ' is-selected' : ''}"><span>${label}</span></span>`,
-    iconSize: [36, 36],
+    html: `<span class="ra-pin${selected ? ' is-selected' : ''}"><span>${label}</span>${additionalEvents ? `<span class="ra-pin-more">+${additionalEvents}</span>` : ''}</span>`,
+    iconSize: [42, 42],
     iconAnchor: [18, 18],
   })
+}
+
+function clusterDescription(cluster) {
+  const entries = cluster.listNumbers.join(', ')
+  return cluster.events.length === 1
+    ? `Event ${entries} at ${cluster.venue}`
+    : `Events ${entries} at ${cluster.venue}`
 }
 
 function reducedMotion() {
@@ -130,8 +137,11 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
   const nodeRef = useRef(null)
   const mapRef = useRef(null)
   const markerLayerRef = useRef(null)
+  const markerEntriesRef = useRef(new Map())
+  const selectedClusterKeyRef = useRef(null)
   const resizeRef = useRef(null)
   const onSelectRef = useRef(onSelectFromMap)
+  const selectedIdRef = useRef(selectedId)
   const [mapReady, setMapReady] = useState(false)
   const [showNearby, setShowNearby] = useState(false)
   const clusters = useMemo(() => clusterEvents(events), [events])
@@ -141,6 +151,7 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
   const visibleClusters = showNearby ? clusters : cityClusters
 
   onSelectRef.current = onSelectFromMap
+  selectedIdRef.current = selectedId
 
   useEffect(() => setShowNearby(false), [area?.id])
 
@@ -156,6 +167,11 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
       touchZoom: true,
       doubleClickZoom: true,
       keyboard: true,
+      zoomSnap: 0.25,
+      zoomDelta: 0.5,
+      wheelDebounceTime: 80,
+      wheelPxPerZoomLevel: 120,
+      bounceAtZoomLimits: false,
       zoomAnimation: !reducedMotion(),
       fadeAnimation: !reducedMotion(),
       markerZoomAnimation: !reducedMotion(),
@@ -175,6 +191,8 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
       map.remove()
       mapRef.current = null
       markerLayerRef.current = null
+      markerEntriesRef.current.clear()
+      selectedClusterKeyRef.current = null
     }
   }, [token])
 
@@ -183,12 +201,15 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
     const layer = markerLayerRef.current
     if (!map || !layer) return
     layer.clearLayers()
-    visibleClusters.forEach((cluster, index) => {
-      const selected = cluster.events.some((event) => event.id === selectedId)
-      const label = cluster.events.length > 1 ? cluster.events.length : index + 1
-      const description = `${cluster.events.length} event${cluster.events.length === 1 ? '' : 's'} at ${cluster.venue}`
+    markerEntriesRef.current.clear()
+    selectedClusterKeyRef.current = null
+    visibleClusters.forEach((cluster) => {
+      const selected = cluster.events.some((event) => event.id === selectedIdRef.current)
+      const label = cluster.listNumbers[0]
+      const additionalEvents = cluster.events.length - 1
+      const description = clusterDescription(cluster)
       const marker = L.marker([cluster.lat, cluster.lon], {
-        icon: markerIcon(label, selected),
+        icon: markerIcon(label, additionalEvents, selected),
         keyboard: true,
         title: description,
         alt: description,
@@ -196,7 +217,33 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
       marker.on('click', () => onSelectRef.current(cluster.events[0].id))
       marker.addTo(layer)
       marker.getElement()?.setAttribute('aria-label', description)
+      markerEntriesRef.current.set(cluster.key, { marker, cluster })
+      if (selected) selectedClusterKeyRef.current = cluster.key
     })
+  }, [visibleClusters])
+
+  useEffect(() => {
+    const nextKey = visibleClusters.find((cluster) => (
+      cluster.events.some((event) => event.id === selectedId)
+    ))?.key || null
+    const previousKey = selectedClusterKeyRef.current
+    if (previousKey && previousKey !== nextKey) {
+      const previous = markerEntriesRef.current.get(previousKey)
+      if (previous) previous.marker.setIcon(markerIcon(
+        previous.cluster.listNumbers[0],
+        previous.cluster.events.length - 1,
+        false,
+      ))
+    }
+    if (nextKey && nextKey !== previousKey) {
+      const next = markerEntriesRef.current.get(nextKey)
+      if (next) next.marker.setIcon(markerIcon(
+        next.cluster.listNumbers[0],
+        next.cluster.events.length - 1,
+        true,
+      ))
+    }
+    selectedClusterKeyRef.current = nextKey
   }, [selectedId, visibleClusters])
 
   useEffect(() => {
@@ -214,7 +261,7 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
     }
     const map = mapRef.current
     const target = [selected.venue.lat, selected.venue.lon]
-    const zoom = Math.max(map.getZoom(), 15)
+    const zoom = Math.max(map.getZoom(), 14)
     if (reducedMotion()) map.setView(target, zoom, { animate: false })
     else map.flyTo(target, zoom, { duration: 0.55 })
   }, [area?.center, events, mapReady, selectedId, showNearby])

@@ -1,7 +1,7 @@
 {
   "id": "ra-event-map",
   "name": "RA Event Map",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Browse public Resident Advisor event listings by city and date on an OpenStreetMap map.",
   "author": "hamzamerzic",
   "license": "MIT",
@@ -24,6 +24,7 @@
   "source_files": [
     "data.js",
     "LeafletEventMap.jsx",
+    "mapClusters.js",
     "leafletCss.js",
     "LEAFLET-LICENSE.txt",
     "vendor/leaflet-src.esm.js"

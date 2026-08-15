@@ -18,6 +18,6 @@ The package includes its map runtime, while live listings and map tiles remain n
 
 ## Map controls
 
-Drag to pan, pinch on touch devices, or use the mouse wheel on desktop to zoom. Selecting a listing zooms the map to its venue. Selecting a map pin keeps the map visible and scrolls only the results list to the matching event.
+Drag to pan, pinch on touch devices, or use the mouse wheel on desktop to zoom. Selecting a listing zooms the map to its venue. Selecting a map pin keeps the map visible and scrolls only the results list to the matching event. Numbered pins match the results list; a small `+N` badge marks additional events at the same venue.
 
 Resident Advisor is a trademark of its respective owner. This project is unofficial and is not affiliated with or endorsed by Resident Advisor.
