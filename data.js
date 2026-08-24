@@ -1,3 +1,5 @@
+import { fetchExternal } from './publicFetch.js'
+
 const RA_GRAPHQL = 'https://ra.co/graphql'
 
 const AREA_QUERY = `
@@ -50,8 +52,7 @@ async function graphQL(token, query, variables, signal) {
     query,
     variables: JSON.stringify(variables),
   })}`
-  const response = await fetch(`/api/proxy?url=${encodeURIComponent(remote)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const response = await fetchExternal(token, remote, {
     signal,
   })
   if (!response.ok) throw new Error(`Resident Advisor returned ${response.status}`)

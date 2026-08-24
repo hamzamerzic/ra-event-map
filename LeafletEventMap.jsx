@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin } from '@openai/apps-sdk-ui/components/Icon'
 import * as L from './vendor/leaflet-src.esm.js'
 import { clusterEvents } from './mapClusters.js'
+import { fetchExternal } from './publicFetch.js'
 
 const TILE_TEMPLATE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
@@ -16,51 +17,34 @@ function blobToDataUrl(blob) {
 
 function createProxyTileLayer(token) {
   const controllers = new Set()
-  const tileCache = new Map()
-  const cacheLimit = 192
-
-  function loadTile(remote) {
-    const cached = tileCache.get(remote)
-    if (cached) {
-      tileCache.delete(remote)
-      tileCache.set(remote, cached)
-      return cached
-    }
-    const controller = new AbortController()
-    controllers.add(controller)
-    const pending = fetch(`/api/proxy?url=${encodeURIComponent(remote)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    }).then((response) => {
-      if (!response.ok) throw new Error(`Map tile ${response.status}`)
-      return response.blob()
-    }).then(blobToDataUrl).finally(() => controllers.delete(controller))
-    pending.catch(() => {
-      if (tileCache.get(remote) === pending) tileCache.delete(remote)
-    })
-    tileCache.set(remote, pending)
-    if (tileCache.size > cacheLimit) tileCache.delete(tileCache.keys().next().value)
-    return pending
-  }
-
   const ProxyTileLayer = L.GridLayer.extend({
     createTile(coords, done) {
       const image = document.createElement('img')
       image.alt = ''
       image.setAttribute('role', 'presentation')
+      const controller = new AbortController()
+      controllers.add(controller)
       const remote = TILE_TEMPLATE
         .replace('{z}', coords.z)
         .replace('{x}', coords.x)
         .replace('{y}', coords.y)
-      loadTile(remote).then((url) => {
+      fetchExternal(token, remote, {
+        signal: controller.signal,
+      }).then((response) => {
+        if (!response.ok) throw new Error(`Map tile ${response.status}`)
+        return response.blob()
+      }).then(blobToDataUrl).then((url) => {
         image.onload = () => {
+          controllers.delete(controller)
           done(null, image)
         }
         image.onerror = (error) => {
+          controllers.delete(controller)
           done(error, image)
         }
         image.src = url
       }).catch((error) => {
+        controllers.delete(controller)
         if (error?.name !== 'AbortError') done(error, image)
       })
       return image
@@ -69,14 +53,13 @@ function createProxyTileLayer(token) {
   const layer = new ProxyTileLayer({
     minZoom: 4,
     maxZoom: 19,
-    keepBuffer: 4,
-    updateWhenZooming: false,
-    updateWhenIdle: true,
+    keepBuffer: 2,
+    updateWhenZooming: true,
+    updateWhenIdle: false,
   })
   layer.abortPending = () => {
     controllers.forEach((controller) => controller.abort())
     controllers.clear()
-    tileCache.clear()
   }
   return layer
 }
@@ -167,10 +150,6 @@ export function LeafletEventMap({ area, events, selectedId, onSelectFromMap, tok
       touchZoom: true,
       doubleClickZoom: true,
       keyboard: true,
-      zoomSnap: 0.25,
-      zoomDelta: 0.5,
-      wheelDebounceTime: 80,
-      wheelPxPerZoomLevel: 120,
       bounceAtZoomLimits: false,
       zoomAnimation: !reducedMotion(),
       fadeAnimation: !reducedMotion(),
